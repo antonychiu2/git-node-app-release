@@ -1,3 +1,6 @@
 replicas: 1
 service:
   nodePort: 30081
+image:
+  repository: docker.io/antonychiu2/git-node-app-test2
+  tag: sha-eec570f0b0c57c6d0a0e7a5de3407dc48470c8c8
