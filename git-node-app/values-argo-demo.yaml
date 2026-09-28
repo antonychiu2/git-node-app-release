@@ -2,6 +2,7 @@
 # GitOps: change image.tag here and commit; Argo CD deploys it.
 replicas: 1
 image:
-  tag: sha-fe57212a54c9cd2b642c06ceed8fa191122acc9f
+  #tag: sha-fe57212a54c9cd2b642c06ceed8fa191122acc9f
+  tag: latest
 service:
   nodePort: 30084
