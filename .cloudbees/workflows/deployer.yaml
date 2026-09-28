@@ -44,6 +44,10 @@ on:
       argo-url:
         type: string
         required: true
+      app-url:
+        type: string
+        required: false
+        default: ""
       ticket:
         type: string
         required: false
@@ -51,7 +55,10 @@ on:
 
 env:
   COMPONENT: git-node-app-test2
+  APP_REPO: antonychiu2/git-node-app-test2
+  RELEASE_REPO: antonychiu2/git-node-app-release
   REPO_URL: github.com/antonychiu2/git-node-app-release.git
+  JIRA_BROWSE_URL: https://antony-chiu.atlassian.net/browse
 
 jobs:
   deploy:
@@ -81,6 +88,25 @@ jobs:
           printf '%s' "$(jq -r '.id' /tmp/artifact.json)"      > "$CLOUDBEES_OUTPUTS/id"
           printf '%s' "$(jq -r '.version' /tmp/artifact.json)" > "$CLOUDBEES_OUTPUTS/version"
 
+          # Source commit the image was built from (CI tags images sha-<commit>).
+          tag="${url##*:}"; src=""; msg=""
+          case "$tag" in sha-*) src="${tag#sha-}" ;; esac
+          if [ -n "$src" ]; then
+            msg=$(curl -fsS --max-time 10 "https://api.github.com/repos/$APP_REPO/commits/$src" \
+                  | jq -r '.commit.message | split("\n")[0]' | tr -d '|`') || msg=""
+          fi
+          printf '%s' "$src" > "$CLOUDBEES_OUTPUTS/source-commit"
+          printf '%s' "$msg" > "$CLOUDBEES_OUTPUTS/source-message"
+
+      - id: provenance
+        name: Resolve image digest
+        uses: docker://gcr.io/go-containerregistry/crane:debug
+        run: |
+          # The digest pins the exact bytes deployed; tags can move, digests can't.
+          img="${{ steps.artifact.outputs.repository }}:${{ steps.artifact.outputs.tag }}"
+          crane digest "$img" > "$CLOUDBEES_OUTPUTS/digest" || printf 'unavailable' > "$CLOUDBEES_OUTPUTS/digest"
+          echo "$img@$(cat "$CLOUDBEES_OUTPUTS/digest")"
+
       - id: gitops
         name: Commit image tag to Git
         uses: docker://alpine:3.20
@@ -105,6 +131,8 @@ jobs:
           for attempt in 1 2 3; do
             git fetch -q "$remote" main
             git reset -q --hard FETCH_HEAD
+            base=$(git rev-parse HEAD)
+            prev=$(yq '.image.tag // ""' "$VALUES_FILE")
             yq -i '.image.repository = strenv(IMAGE_REPO) | .image.tag = strenv(IMAGE_TAG)' "$VALUES_FILE"
             if git diff --quiet; then
               echo "$VALUES_FILE already pins $IMAGE_REPO:$IMAGE_TAG; nothing to commit"
@@ -118,7 +146,9 @@ jobs:
 
           rev=$(git rev-parse HEAD)
           git log -1 --format='%h %s'
-          printf '%s' "$rev" > "$CLOUDBEES_OUTPUTS/revision"
+          printf '%s' "$rev"  > "$CLOUDBEES_OUTPUTS/revision"
+          printf '%s' "$base" > "$CLOUDBEES_OUTPUTS/base-revision"
+          printf '%s' "$prev" > "$CLOUDBEES_OUTPUTS/previous-tag"
 
       - id: argo
         name: Wait for Argo CD sync and health
@@ -154,7 +184,12 @@ jobs:
             if [ "$rev" = "$WANT" ]; then
               if [ "$sync" = Synced ] && [ "$health" = Healthy ]; then
                 printf '%s' "$health" > "$CLOUDBEES_OUTPUTS/health"
-                echo "Images: $(jq -r '.status.summary.images // [] | join(", ")' /tmp/app.json)"
+                jq -j '.status.summary.images // [] | join(", ")'   /tmp/app.json > "$CLOUDBEES_OUTPUTS/images"
+                jq -j '.status.operationState.startedAt // ""'      /tmp/app.json > "$CLOUDBEES_OUTPUTS/sync-started"
+                jq -j '.status.operationState.finishedAt // ""'     /tmp/app.json > "$CLOUDBEES_OUTPUTS/sync-finished"
+                jq -j '.status.operationState.operation.initiatedBy | if .automated then "Argo CD automated sync" else (.username // "unknown") end' \
+                  /tmp/app.json > "$CLOUDBEES_OUTPUTS/sync-initiator" || printf 'unknown' > "$CLOUDBEES_OUTPUTS/sync-initiator"
+                echo "Images: $(cat "$CLOUDBEES_OUTPUTS/images")"
                 exit 0
               fi
               case "$phase" in Failed|Error)
@@ -177,15 +212,85 @@ jobs:
           artifact-id: ${{ steps.artifact.outputs.id }}
           target-environment: ${{ inputs.environment }}
 
+      # Evidence for reviewers/auditors: what changed, which exact artifact, proof it
+      # is running healthy (from Argo CD, not assumed), where to look, how to undo.
+      # Who triggered/approved the release is recorded by Unify itself.
+      - id: evidence
+        name: Compose deployment evidence
+        uses: docker://alpine/k8s:1.36.5
+        env:
+          ENV_NAME: ${{ inputs.environment }}
+          NS: ${{ inputs.namespace }}
+          VALUES_FILE: git-node-app/${{ inputs.values-file }}
+          APP_URL: ${{ inputs.app-url }}
+          ARGO_URL: ${{ inputs.argo-url }}
+          ARGO_APP: ${{ inputs.argo-app }}
+          TICKET: ${{ inputs.ticket }}
+          IMAGE_REPO: ${{ steps.artifact.outputs.repository }}
+          IMAGE_TAG: ${{ steps.artifact.outputs.tag }}
+          ART_VERSION: ${{ steps.artifact.outputs.version }}
+          ART_ID: ${{ steps.artifact.outputs.id }}
+          SRC_COMMIT: ${{ steps.artifact.outputs.source-commit }}
+          SRC_MSG: ${{ steps.artifact.outputs.source-message }}
+          DIGEST: ${{ steps.provenance.outputs.digest }}
+          REV: ${{ steps.gitops.outputs.revision }}
+          BASE_REV: ${{ steps.gitops.outputs.base-revision }}
+          PREV_TAG: ${{ steps.gitops.outputs.previous-tag }}
+          HEALTH: ${{ steps.argo.outputs.health }}
+          IMAGES: ${{ steps.argo.outputs.images }}
+          SYNC_STARTED: ${{ steps.argo.outputs.sync-started }}
+          SYNC_FINISHED: ${{ steps.argo.outputs.sync-finished }}
+          SYNC_BY: ${{ steps.argo.outputs.sync-initiator }}
+        run: |
+          set -eu
+          gh="https://github.com"
+          s() { printf '%s' "$1" | cut -c1-12; }
+          {
+            printf '## ✅ Deployed to **%s**: `%s` `%s`\n\n' "$ENV_NAME" "$COMPONENT" "$(s "$IMAGE_TAG")"
+            printf 'Argo CD reported Git revision `%s` **Synced / %s** before this stage passed.\n\n' "$(s "$REV")" "$HEALTH"
+
+            printf '### Change\n| | |\n|---|---|\n'
+            if [ -n "$TICKET" ]; then printf '| Ticket | [%s](%s/%s) |\n' "$TICKET" "$JIRA_BROWSE_URL" "$TICKET"; fi
+            if [ "$PREV_TAG" = "$IMAGE_TAG" ]; then
+              printf '| Version | `%s` (unchanged, already deployed) |\n' "$IMAGE_TAG"
+            else
+              printf '| Version | `%s` → **`%s`** |\n' "${PREV_TAG:-none}" "$IMAGE_TAG"
+            fi
+            if [ "$REV" = "$BASE_REV" ]; then
+              printf '| GitOps commit | none needed: `%s` already pinned this image at [`%s`](%s/%s/commit/%s) |\n' "$VALUES_FILE" "$(s "$REV")" "$gh" "$RELEASE_REPO" "$REV"
+            else
+              printf '| GitOps commit | [`%s`](%s/%s/commit/%s) (`%s`, [diff](%s/%s/compare/%s...%s)) |\n' \
+                "$(s "$REV")" "$gh" "$RELEASE_REPO" "$REV" "$VALUES_FILE" "$gh" "$RELEASE_REPO" "$BASE_REV" "$REV"
+            fi
+
+            printf '\n### Build provenance\n| | |\n|---|---|\n'
+            if [ -n "$SRC_COMMIT" ]; then
+              printf '| Source commit | [`%s`](%s/%s/commit/%s) %s |\n' "$(s "$SRC_COMMIT")" "$gh" "$APP_REPO" "$SRC_COMMIT" "$SRC_MSG"
+            fi
+            printf '| Image | `%s:%s` |\n' "$IMAGE_REPO" "$IMAGE_TAG"
+            printf '| Digest | `%s` |\n' "$DIGEST"
+            printf '| Unify artifact | version `%s`, id `%s` (tests and scans are on its CI run) |\n' "$ART_VERSION" "$ART_ID"
+
+            printf '\n### Deployment verification (reported by Argo CD)\n| | |\n|---|---|\n'
+            printf '| Argo CD application | [%s](%s/applications/argocd/%s): **Synced / %s** at `%s` |\n' "$ARGO_APP" "${ARGO_URL%/}" "$ARGO_APP" "$HEALTH" "$(s "$REV")"
+            printf '| Running images | `%s` |\n' "$IMAGES"
+            printf '| Sync | started `%s`, finished `%s`, by %s |\n' "${SYNC_STARTED:-n/a}" "${SYNC_FINISHED:-n/a}" "$SYNC_BY"
+
+            printf '\n### Access\n| | |\n|---|---|\n'
+            if [ -n "$APP_URL" ]; then printf '| Application | %s |\n' "$APP_URL"; fi
+            printf '| Namespace | `%s` |\n' "$NS"
+
+            printf '\n### Rollback\n'
+            if [ "$REV" != "$BASE_REV" ] && [ -n "$PREV_TAG" ] && [ "$PREV_TAG" != "$IMAGE_TAG" ]; then
+              printf 'Revert [`%s`](%s/%s/commit/%s) on `%s` (`git revert %s`); Argo CD then restores `%s` automatically.\n' \
+                "$(s "$REV")" "$gh" "$RELEASE_REPO" "$REV" "$RELEASE_REPO" "$(s "$REV")" "$PREV_TAG"
+            else
+              printf 'Set `image.tag` in `%s` back to the previous version and commit; Argo CD applies it automatically.\n' "$VALUES_FILE"
+            fi
+          } > "$CLOUDBEES_OUTPUTS/summary"
+          cat "$CLOUDBEES_OUTPUTS/summary"
+
       - name: Publish deployment evidence
         uses: cloudbees-io/publish-evidence-item@v1
         with:
-          content: |-
-            ## Deployed to ${{ inputs.environment }} via Argo CD
-            | | |
-            |---|---|
-            | Image | `${{ steps.artifact.outputs.repository }}:${{ steps.artifact.outputs.tag }}` |
-            | Artifact version | `${{ steps.artifact.outputs.version }}` |
-            | Git commit | [`${{ steps.gitops.outputs.revision }}`](https://github.com/antonychiu2/git-node-app-release/commit/${{ steps.gitops.outputs.revision }}) |
-            | Argo CD application | [`${{ inputs.argo-app }}`](${{ inputs.argo-url }}/applications/argocd/${{ inputs.argo-app }}) — Synced / ${{ steps.argo.outputs.health }} |
-            | Namespace | `${{ inputs.namespace }}` |
+          content: ${{ steps.evidence.outputs.summary }}
