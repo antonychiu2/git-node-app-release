@@ -1,0 +1,59 @@
+# Permissions for the unify-deployer ServiceAccount used by the Unify release
+# workflow (secret KUBECONFIG_DEPLOYER). With GitOps the pipeline never writes
+# workloads; it only watches Argo CD and reads the target namespaces.
+#
+#   argocd:                 get/list/watch Applications, patch to request a refresh
+#   staging, production:    read-only (view) for pod/event diagnostics
+#
+# Apply once as cluster admin:  kubectl apply -f argocd/unify-deployer-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: unify-deployer-argocd-apps
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: unify-deployer-argocd-apps
+  namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: unify-deployer-argocd-apps
+subjects:
+  - kind: ServiceAccount
+    name: unify-deployer
+    namespace: unify
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: unify-deployer-view
+  namespace: staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: unify-deployer
+    namespace: unify
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: unify-deployer-view
+  namespace: production
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - kind: ServiceAccount
+    name: unify-deployer
+    namespace: unify

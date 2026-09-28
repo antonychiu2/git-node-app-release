@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: git-node-app-staging
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/antonychiu2/git-node-app-release.git
+    targetRevision: main
+    path: git-node-app
+    helm:
+      # Keep resource names/labels as "git-node-app" (the chart uses .Release.Name).
+      releaseName: git-node-app
+      valueFiles:
+        - values-staging.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
