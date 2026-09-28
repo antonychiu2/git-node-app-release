@@ -1,8 +1,9 @@
 # Argo CD practice environment (namespace: argo-demo).
 # GitOps: change image.tag here and commit; Argo CD deploys it.
-replicas: 1
+replicas: 3
 image:
+  tag: sha-3a5879c1f016baf33340cf9258ff54aad2a77d93
   #tag: sha-fe57212a54c9cd2b642c06ceed8fa191122acc9f
-  tag: latest
+  #tag: latest
 service:
   nodePort: 30084
