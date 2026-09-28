@@ -1,0 +1,38 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: edge-diagnostics
+
+# Isolates why release jobs can't be placed on the Edge runner: each job adds
+# one ingredient of the release's deploy job. All jobs run independently.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cloud-plain:
+    steps:
+      - name: Cloud runner
+        uses: docker://alpine:3.20
+        run: echo "cloud runner OK"
+
+  edge-plain:
+    runs-on: antony-ubuntu-vm
+    steps:
+      - name: Edge runner
+        uses: docker://alpine:3.20
+        run: echo "edge runner OK"; uname -a
+
+  edge-with-environment:
+    runs-on: antony-ubuntu-vm
+    environment: staging
+    steps:
+      - name: Edge runner with environment
+        uses: docker://alpine:3.20
+        run: echo "edge runner + environment OK"
+
+  edge-via-reusable:
+    uses: .cloudbees/workflows/edge-diagnostics-callee.yaml
+
+  edge-via-reusable-with-environment:
+    environment: staging
+    uses: .cloudbees/workflows/edge-diagnostics-callee.yaml

@@ -1,0 +1,14 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: edge-diagnostics-callee
+
+on:
+  workflow_call:
+
+jobs:
+  edge:
+    runs-on: antony-ubuntu-vm
+    steps:
+      - name: Edge runner in reusable workflow
+        uses: docker://alpine:3.20
+        run: echo "edge runner via reusable workflow OK"
