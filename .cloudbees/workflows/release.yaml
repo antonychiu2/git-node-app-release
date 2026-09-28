@@ -6,7 +6,8 @@ name: git-node-app-release
 # Started from the Application's Releases tab: CloudBees Unify passes a
 # `manifest` listing the artifact version of each component to release.
 # Each stage commits the image tag to that environment's values file and waits
-# for Argo CD to sync it and report Healthy. Production waits for the manual
+# for Argo CD to sync it and report Healthy (polled via the Argo CD API at
+# vars.ARGOCD_URL, an ngrok tunnel; see deployer.yaml). Production waits for the manual
 # approval configured on the "prod" environment in Unify, then promotes the
 # same image.
 
@@ -43,6 +44,7 @@ jobs:
       namespace: staging
       values-file: values-staging.yaml
       argo-app: git-node-app-staging
+      argo-url: ${{ vars.ARGOCD_URL }}
       ticket: ${{ inputs.ticket }}
 
   deploy-production:
@@ -57,4 +59,5 @@ jobs:
       namespace: production
       values-file: values-prod.yaml
       argo-app: git-node-app-production
+      argo-url: ${{ vars.ARGOCD_URL }}
       ticket: ${{ inputs.ticket }}
