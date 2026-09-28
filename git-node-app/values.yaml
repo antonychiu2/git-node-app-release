@@ -1,0 +1,18 @@
+replicas: 1
+
+image:
+  repository: antonychiu2/git-node-app-test2
+  tag: latest
+
+containerPort: 3000
+
+service:
+  port: 80
+  nodePort: ""   # leave empty to let Kubernetes pick one
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

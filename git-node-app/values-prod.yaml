@@ -1,0 +1,9 @@
+replicas: 2
+service:
+  nodePort: 30082
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 256Mi

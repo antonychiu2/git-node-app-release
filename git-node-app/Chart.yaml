@@ -1,0 +1,6 @@
+apiVersion: v2
+name: git-node-app
+description: Demo Node.js app that talks to git
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
