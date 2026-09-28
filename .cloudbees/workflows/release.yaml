@@ -45,6 +45,7 @@ jobs:
       values-file: values-staging.yaml
       argo-app: git-node-app-staging
       argo-url: ${{ vars.ARGOCD_URL }}
+      app-url: ${{ vars.STAGING_APP_URL }}
       ticket: ${{ inputs.ticket }}
 
   deploy-production:
@@ -60,4 +61,5 @@ jobs:
       values-file: values-prod.yaml
       argo-app: git-node-app-production
       argo-url: ${{ vars.ARGOCD_URL }}
+      app-url: ${{ vars.PROD_APP_URL }}
       ticket: ${{ inputs.ticket }}
