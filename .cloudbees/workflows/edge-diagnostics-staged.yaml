@@ -1,0 +1,19 @@
+apiVersion: automation.cloudbees.io/v1alpha1
+kind: workflow
+name: edge-diagnostics-staged
+
+# Same as edge-plain, but in a staged workflow like release.yaml.
+
+on:
+  workflow_dispatch:
+
+metadata:
+  stages/v1alpha1:
+    - name: Staging
+      jobs:
+        - edge-staged
+
+jobs:
+  edge-staged:
+    environment: staging
+    uses: .cloudbees/workflows/edge-diagnostics-callee.yaml
