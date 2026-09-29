@@ -53,6 +53,8 @@ jobs:
       ticket: ${{ inputs.ticket }}
     secrets: inherit
   manual-approval:
+    needs:
+      - deploy-staging
     timeout-minutes: 4320
     delegates: cloudbees-io/manual-approval/custom-job.yml@v1
     with:
