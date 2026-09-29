@@ -9,4 +9,4 @@ resources:
     memory: 256Mi
 image:
   repository: docker.io/antonychiu2/git-node-app-test2
-  tag: sha-f968e09d03561293519221061136f7c22a6e73a9
+  tag: sha-fe71976dc1ba211a1adc35af88b2f8a380ba060b
