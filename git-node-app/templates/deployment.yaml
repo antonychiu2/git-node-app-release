@@ -19,6 +19,15 @@ spec:
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           ports:
             - containerPort: {{ .Values.containerPort }}
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- if .Values.roxSdkKey }}
+            - name: ROX_SDK_KEY
+              value: {{ .Values.roxSdkKey | quote }}
+            {{- end }}
           readinessProbe:
             httpGet: { path: /, port: {{ .Values.containerPort }} }
             initialDelaySeconds: 3
