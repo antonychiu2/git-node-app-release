@@ -20,8 +20,8 @@ metadata:
         - deploy-staging
     - name: Production
       jobs:
-        - deploy-production
         - manual-approval
+        - deploy-production
 jobs:
   deploy-staging:
     environment: staging
@@ -37,10 +37,11 @@ jobs:
       app-url: ${{ vars.STAGING_APP_URL }}
       ticket: ${{ inputs.ticket }}
   deploy-production:
-    needs: deploy-staging
-    environment: prod
+    needs:
+      - deploy-staging
+      - manual-approval
     uses: .cloudbees/workflows/deployer.yaml
-    secrets: inherit
+    environment: prod
     with:
       manifest: ${{ inputs.manifest }}
       environment: prod
@@ -50,9 +51,8 @@ jobs:
       argo-url: ${{ vars.ARGOCD_URL }}
       app-url: ${{ vars.PROD_APP_URL }}
       ticket: ${{ inputs.ticket }}
+    secrets: inherit
   manual-approval:
-    needs:
-      - deploy-production
     timeout-minutes: 4320
     delegates: cloudbees-io/manual-approval/custom-job.yml@v1
     with:
