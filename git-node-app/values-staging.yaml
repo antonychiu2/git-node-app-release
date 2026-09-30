@@ -3,6 +3,6 @@ service:
   nodePort: 30081
 image:
   repository: docker.io/antonychiu2/git-node-app-test2
-  tag: sha-fe71976dc1ba211a1adc35af88b2f8a380ba060b
+  tag: sha-8ac93f6b695a8d84e18aab3bb0ce83ec6cfc25e8
 # git-node-app application, staging environment SDK key (GS-7)
 roxSdkKey: "06452677-b6d2-43d5-8c52-eac52eb52057"
